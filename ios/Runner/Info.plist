@@ -49,6 +49,10 @@
 	<string>現在地の表示と近くのおすすめスポットの提案に位置情報を使用します。</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>現在地の表示と近くのおすすめスポットの提案に位置情報を使用します。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>スポットの写真を撮影するためにカメラを使用します。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>スポットに写真を追加するためにフォトライブラリにアクセスします。</string>
 	<key>GOOGLE_MAPS_API_KEY</key>
 	<string>$(MAPS_API_KEY)</string>
 </dict>

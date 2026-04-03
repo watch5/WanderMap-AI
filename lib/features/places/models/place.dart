@@ -12,6 +12,8 @@ class Place {
     this.notes = '',
     this.visited = false,
     this.rating = 0,
+    this.imagePath,
+    this.aiTags = const [],
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : id = id ?? _uuid.v4(),
@@ -25,6 +27,8 @@ class Place {
   final String notes;
   final bool visited;
   final int rating; // 0-5
+  final String? imagePath;
+  final List<String> aiTags;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -36,6 +40,9 @@ class Place {
     String? notes,
     bool? visited,
     int? rating,
+    String? imagePath,
+    bool clearImage = false,
+    List<String>? aiTags,
     DateTime? updatedAt,
   }) {
     return Place(
@@ -46,6 +53,8 @@ class Place {
       notes: notes ?? this.notes,
       visited: visited ?? this.visited,
       rating: rating ?? this.rating,
+      imagePath: clearImage ? null : (imagePath ?? this.imagePath),
+      aiTags: aiTags ?? this.aiTags,
       createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
     );
@@ -61,6 +70,11 @@ class Place {
       notes: json['notes'] as String? ?? '',
       visited: json['visited'] as bool? ?? false,
       rating: json['rating'] as int? ?? 0,
+      imagePath: json['imagePath'] as String?,
+      aiTags: (json['aiTags'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
@@ -76,6 +90,8 @@ class Place {
       'notes': notes,
       'visited': visited,
       'rating': rating,
+      'imagePath': imagePath,
+      'aiTags': aiTags,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };

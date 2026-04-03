@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
@@ -71,6 +74,81 @@ $placesDescription
       throw Exception('AI エラー: ${e.message}');
     } catch (e) {
       throw Exception('ネットワークエラーが発生しました: $e');
+    }
+  }
+
+  /// 写真を分析してタグとメモを自動生成する
+  Future<PlacePhotoAnalysis> analyzePlacePhoto(File imageFile) async {
+    final bytes = await imageFile.readAsBytes();
+    final mimeType = imageFile.path.toLowerCase().endsWith('.png')
+        ? 'image/png'
+        : 'image/jpeg';
+
+    const prompt = '''
+あなたは食べ物と旅行の専門家です。この写真を分析してください。
+
+【指示】
+以下の JSON 形式のみで回答してください。それ以外のテキストは不要です。
+{
+  "tags": ["#タグ1", "#タグ2", "#タグ3"],
+  "note": "この場所/食べ物について魅力的な1文の説明"
+}
+
+- tags: 写真に写っている場所や食べ物を表すタグを3つ（例: #カフェ, #ラーメン, #海辺, #おしゃれ）
+- note: 写真から感じ取れる魅力を簡潔に表現した1文（日本語、30文字程度）
+''';
+
+    try {
+      final response = await _gemini.generateContent([
+        Content.multi([
+          TextPart(prompt),
+          DataPart(mimeType, bytes),
+        ]),
+      ]).timeout(const Duration(seconds: 30));
+
+      final text = response.text;
+      if (text == null || text.isEmpty) {
+        return PlacePhotoAnalysis.empty();
+      }
+
+      return PlacePhotoAnalysis.fromResponseText(text);
+    } on GenerativeAIException catch (e) {
+      throw Exception('AI 画像分析エラー: ${e.message}');
+    } catch (e) {
+      throw Exception('画像分析に失敗しました: $e');
+    }
+  }
+}
+
+/// 写真分析の結果
+class PlacePhotoAnalysis {
+  const PlacePhotoAnalysis({required this.tags, required this.note});
+
+  final List<String> tags;
+  final String note;
+
+  factory PlacePhotoAnalysis.empty() {
+    return const PlacePhotoAnalysis(tags: [], note: '');
+  }
+
+  factory PlacePhotoAnalysis.fromResponseText(String text) {
+    try {
+      // JSON 部分を抽出（余分なテキストが付く場合への対応）
+      final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(text);
+      if (jsonMatch == null) return PlacePhotoAnalysis.empty();
+
+      final Map<String, dynamic> parsed =
+          json.decode(jsonMatch.group(0)!) as Map<String, dynamic>;
+
+      final tags = (parsed['tags'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [];
+      final note = parsed['note'] as String? ?? '';
+
+      return PlacePhotoAnalysis(tags: tags, note: note);
+    } catch (_) {
+      return PlacePhotoAnalysis(tags: [], note: text.trim());
     }
   }
 }

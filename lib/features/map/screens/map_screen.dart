@@ -42,9 +42,33 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           title: place.title,
           snippet: place.visited ? '訪問済み' : '行きたい',
         ),
-        onTap: () => _showPlaceSheet(place: place),
+        onTap: () => _onMarkerTapped(place),
       );
     }).toSet();
+  }
+
+  /// マーカータップ時: シートの高さ分だけ上にオフセットしてカメラ移動→シート表示
+  Future<void> _onMarkerTapped(Place place) async {
+    final screenHeight = MediaQuery.of(context).size.height;
+    // ボトムシートが画面の ~35% を占めるので、マーカーを上方に見せるオフセット
+    final offsetY = screenHeight * 0.15;
+
+    final target = LatLng(place.latitude, place.longitude);
+    final screenCoord = await _mapController?.getScreenCoordinate(target);
+
+    if (screenCoord != null && _mapController != null) {
+      final adjustedCoord = ScreenCoordinate(
+        x: screenCoord.x,
+        y: (screenCoord.y + offsetY).round(),
+      );
+      final newTarget = await _mapController!.getLatLng(adjustedCoord);
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLng(newTarget),
+      );
+    }
+
+    if (!mounted) return;
+    await _showPlaceSheet(place: place);
   }
 
   Future<void> _showPlaceSheet({
@@ -56,6 +80,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      useSafeArea: true,
       builder: (context) => PlaceBottomSheet(
         latitude: place?.latitude ?? latitude ?? _defaultPosition.latitude,
         longitude:
@@ -78,8 +103,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     try {
       final position = await ref.read(currentLocationProvider.future);
       _mapController?.animateCamera(
-        CameraUpdate.newLatLng(
-          LatLng(position.latitude, position.longitude),
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(position.latitude, position.longitude),
+            zoom: AppConstants.defaultZoom,
+          ),
         ),
       );
     } catch (e) {

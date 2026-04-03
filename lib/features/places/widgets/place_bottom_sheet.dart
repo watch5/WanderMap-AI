@@ -1,6 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
+import '../../../core/services/gemini_service.dart';
 import '../../places/models/place.dart';
 import '../../places/providers/places_provider.dart';
 
@@ -26,19 +32,26 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
   late final TextEditingController _notesController;
   late bool _visited;
   late int _rating;
+  late List<String> _aiTags;
+  File? _selectedImage;
   bool _saving = false;
+  bool _analyzingPhoto = false;
 
   bool get _isEditing => widget.existingPlace != null;
 
   @override
   void initState() {
     super.initState();
-    _titleController =
-        TextEditingController(text: widget.existingPlace?.title ?? '');
-    _notesController =
-        TextEditingController(text: widget.existingPlace?.notes ?? '');
-    _visited = widget.existingPlace?.visited ?? false;
-    _rating = widget.existingPlace?.rating ?? 0;
+    final existing = widget.existingPlace;
+    _titleController = TextEditingController(text: existing?.title ?? '');
+    _notesController = TextEditingController(text: existing?.notes ?? '');
+    _visited = existing?.visited ?? false;
+    _rating = existing?.rating ?? 0;
+    _aiTags = List<String>.from(existing?.aiTags ?? []);
+    if (existing?.imagePath != null) {
+      final f = File(existing!.imagePath!);
+      if (f.existsSync()) _selectedImage = f;
+    }
   }
 
   @override
@@ -59,9 +72,9 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
         duration: const Duration(milliseconds: 200),
         padding: EdgeInsets.only(bottom: bottomInset),
         child: DraggableScrollableSheet(
-          initialChildSize: 0.55,
+          initialChildSize: 0.65,
           minChildSize: 0.3,
-          maxChildSize: 0.85,
+          maxChildSize: 0.9,
           expand: false,
           builder: (context, scrollController) {
             return Container(
@@ -103,6 +116,16 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
                     ),
                   ),
                   const SizedBox(height: 20),
+
+                  // 写真エリア
+                  _buildImagePicker(theme),
+                  const SizedBox(height: 16),
+
+                  // AIタグ
+                  if (_aiTags.isNotEmpty) ...[
+                    _buildAiTags(theme),
+                    const SizedBox(height: 16),
+                  ],
 
                   // タイトル入力
                   TextField(
@@ -152,7 +175,8 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
                             label: const Text('削除'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: theme.colorScheme.error,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
                             ),
                           ),
                         ),
@@ -173,7 +197,8 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
                               : Icon(_isEditing ? Icons.save : Icons.add),
                           label: Text(_isEditing ? '更新' : '追加'),
                           style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 14),
                           ),
                         ),
                       ),
@@ -187,6 +212,249 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
       ),
     );
   }
+
+  // ── 写真ピッカー ────────────────────────
+
+  Widget _buildImagePicker(ThemeData theme) {
+    return GestureDetector(
+      onTap: _analyzingPhoto ? null : _pickImage,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        height: 180,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest
+              .withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: theme.colorScheme.outlineVariant,
+            width: 1.5,
+          ),
+          image: _selectedImage != null
+              ? DecorationImage(
+                  image: FileImage(_selectedImage!),
+                  fit: BoxFit.cover,
+                )
+              : null,
+        ),
+        child: _analyzingPhoto
+            ? _buildAnalyzingOverlay(theme)
+            : _selectedImage == null
+                ? _buildEmptyImagePlaceholder(theme)
+                : _buildImageOverlay(theme),
+      ),
+    );
+  }
+
+  Widget _buildEmptyImagePlaceholder(ThemeData theme) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.add_a_photo_outlined,
+          size: 40,
+          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '写真を追加',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color:
+                theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'AIが自動でタグとメモを提案します',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color:
+                theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImageOverlay(ThemeData theme) {
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: CircleAvatar(
+          radius: 18,
+          backgroundColor:
+              theme.colorScheme.surface.withValues(alpha: 0.85),
+          child: Icon(
+            Icons.edit,
+            size: 18,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnalyzingOverlay(ThemeData theme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: theme.colorScheme.inversePrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'AI が写真を分析中...',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── AIタグ ────────────────────────────
+
+  Widget _buildAiTags(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.auto_awesome,
+                size: 16, color: theme.colorScheme.tertiary),
+            const SizedBox(width: 6),
+            Text(
+              'AI タグ',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.tertiary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: _aiTags.map((tag) {
+            return Chip(
+              label: Text(tag),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              backgroundColor:
+                  theme.colorScheme.tertiaryContainer.withValues(alpha: 0.5),
+              labelStyle: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onTertiaryContainer,
+              ),
+              side: BorderSide.none,
+              deleteIcon: const Icon(Icons.close, size: 14),
+              onDeleted: () {
+                setState(() => _aiTags.remove(tag));
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  // ── 画像選択＋AI分析 ──────────────────────
+
+  Future<void> _pickImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('カメラで撮影'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('ギャラリーから選択'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+
+      // アプリのドキュメントディレクトリに保存
+      final appDir = await getApplicationDocumentsDirectory();
+      final fileName =
+          'place_${DateTime.now().millisecondsSinceEpoch}${p.extension(picked.path)}';
+      final savedFile = await File(picked.path).copy(
+        p.join(appDir.path, fileName),
+      );
+
+      setState(() => _selectedImage = savedFile);
+
+      // AIで写真を分析
+      await _analyzePhoto(savedFile);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('写真の選択に失敗しました: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _analyzePhoto(File imageFile) async {
+    setState(() => _analyzingPhoto = true);
+
+    try {
+      final gemini = GeminiService();
+      final analysis = await gemini.analyzePlacePhoto(imageFile);
+
+      if (!mounted) return;
+
+      setState(() {
+        if (analysis.tags.isNotEmpty) {
+          _aiTags = analysis.tags;
+        }
+        if (analysis.note.isNotEmpty && _notesController.text.isEmpty) {
+          _notesController.text = analysis.note;
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('AI分析に失敗しました: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _analyzingPhoto = false);
+    }
+  }
+
+  // ── 訪問済み/行きたい ──────────────────────
 
   Widget _buildVisitedToggle(ThemeData theme) {
     return Container(
@@ -247,6 +515,8 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
     );
   }
 
+  // ── 保存 / 削除 ────────────────────────
+
   Future<void> _savePlace() async {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
@@ -267,6 +537,8 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
           notes: _notesController.text.trim(),
           visited: _visited,
           rating: _visited ? _rating : 0,
+          imagePath: _selectedImage?.path,
+          aiTags: _aiTags,
         );
         await notifier.updatePlace(updated);
       } else {
@@ -277,6 +549,8 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
           notes: _notesController.text.trim(),
           visited: _visited,
           rating: _visited ? _rating : 0,
+          imagePath: _selectedImage?.path,
+          aiTags: _aiTags,
         );
         await notifier.addPlace(newPlace);
       }
