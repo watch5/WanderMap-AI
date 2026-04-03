@@ -34,13 +34,19 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   Set<Marker> _buildMarkers(List<Place> places) {
     return places.map((place) {
+      final snippet = place.visited
+          ? '${place.genre ?? '訪問済み'}${place.rating > 0 ? ' ★${place.rating.toStringAsFixed(1)}' : ''}'
+          : '行きたい${place.genre != null ? ' (${place.genre})' : ''}';
       return Marker(
         markerId: MarkerId(place.id),
         position: LatLng(place.latitude, place.longitude),
-        icon: MarkerHelper.getMarkerIcon(visited: place.visited),
+        icon: MarkerHelper.getMarkerIcon(
+          visited: place.visited,
+          genre: place.genre,
+        ),
         infoWindow: InfoWindow(
           title: place.title,
-          snippet: place.visited ? '訪問済み' : '行きたい',
+          snippet: snippet,
         ),
         onTap: () => _onMarkerTapped(place),
       );

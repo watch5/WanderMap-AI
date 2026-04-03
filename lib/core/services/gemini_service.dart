@@ -29,37 +29,43 @@ class GeminiService {
     return _model!;
   }
 
-  /// 訪問済みの場所とユーザーの現在地を基に、次に行くべき場所を提案する
+  /// 訪問済みの場所とユーザーの現在地を基に、次に行くべきグルメスポットを提案する
   Future<String> suggestNextPlaces({
     required List<Place> visitedPlaces,
     required double currentLat,
     required double currentLng,
   }) async {
     if (visitedPlaces.isEmpty) {
-      return 'まだ訪問済みの場所がありません。場所を追加して「訪問済み」にマークすると、AIがおすすめを提案します！';
+      return 'まだ訪問済みのお店がありません。お店を追加して「訪問済み」にマークすると、AIがあなたの味覚に合ったおすすめを提案します！';
     }
 
     final placesDescription = visitedPlaces.map((p) {
-      final ratingStr = p.rating > 0 ? '（評価: ${p.rating}/5）' : '';
+      final ratingStr = p.rating > 0 ? '（評価: ${p.rating.toStringAsFixed(1)}/5.0）' : '';
+      final genreStr = p.genre != null ? '[${p.genre}]' : '';
+      final priceStr = p.priceRange != null ? p.priceRange!.symbol : '';
       final notesStr = p.notes.isNotEmpty ? 'メモ: ${p.notes}' : '';
-      return '- ${p.title}$ratingStr $notesStr';
+      return '- $genreStr ${p.title}$ratingStr $priceStr $notesStr';
     }).join('\n');
 
     final prompt = '''
-あなたは地元を熟知した旅行コンシェルジュです。
-ユーザーが過去に訪れた場所の情報を基に、次に訪れるべきおすすめの場所を2〜3件提案してください。
+あなたはミシュラン級の味覚を持つグルメAIコンシェルジュです。
+ユーザーの食の好みを深く分析し、次に訪れるべきグルメスポットを提案してください。
 
-【ユーザーの訪問履歴】
+【ユーザーの飲食履歴】
 $placesDescription
 
 【ユーザーの現在位置】
 緯度: $currentLat, 経度: $currentLng
 
 【指示】
-- ユーザーの好みや傾向を分析してください（例：静かなカフェが好き、自然が好き等）。
-- 現在位置の近くで、ユーザーの好みに合いそうな場所のカテゴリや種類を2〜3件提案してください。
-- 各提案には、なぜおすすめするのか簡潔な理由を添えてください。
-- 回答は日本語で、親しみやすいトーンで書いてください。
+- ユーザーの味の好みや傾向を分析してください（例：辛いもの好き、和食中心、コスパ重視など）。
+- 現在位置の近くで、ユーザーの味覚に合いそうなお店のジャンルや料理を2〜3件提案してください。
+- 各提案には以下を含めてください：
+  ・おすすめの料理ジャンルまたは具体的な料理名
+  ・なぜその料理がユーザーに合うのか、食の好みに基づく理由
+  ・予想価格帯
+- 食通ならではの視点で、ありきたりでない提案を心がけてください。
+- 回答は日本語で、グルメ通の友人のような親しみやすいトーンで書いてください。
 - マークダウン形式は使わず、プレーンテキストで回答してください。
 ''';
 
@@ -77,7 +83,7 @@ $placesDescription
     }
   }
 
-  /// 写真を分析してタグとメモを自動生成する
+  /// 料理写真を分析してタグ・メモ・ジャンルを自動生成する
   Future<PlacePhotoAnalysis> analyzePlacePhoto(File imageFile) async {
     final bytes = await imageFile.readAsBytes();
     final mimeType = imageFile.path.toLowerCase().endsWith('.png')
@@ -85,17 +91,21 @@ $placesDescription
         : 'image/jpeg';
 
     const prompt = '''
-あなたは食べ物と旅行の専門家です。この写真を分析してください。
+あなたは一流のフードライター兼料理評論家です。この写真を分析してください。
 
 【指示】
 以下の JSON 形式のみで回答してください。それ以外のテキストは不要です。
 {
   "tags": ["#タグ1", "#タグ2", "#タグ3"],
-  "note": "この場所/食べ物について魅力的な1文の説明"
+  "note": "この料理/お店について食欲をそそる1文の説明",
+  "genre": "ジャンル名"
 }
 
-- tags: 写真に写っている場所や食べ物を表すタグを3つ（例: #カフェ, #ラーメン, #海辺, #おしゃれ）
-- note: 写真から感じ取れる魅力を簡潔に表現した1文（日本語、30文字程度）
+- tags: 写真に写っている料理やお店の特徴を表すタグを3〜5つ（例: #つけ麺, #濃厚スープ, #自家製麺, #大盛り）
+- note: 写真から感じ取れる美味しさの魅力を簡潔に表現した1文（日本語、40文字程度、食欲をそそる表現で）
+- genre: 以下のジャンルから最も近いものを1つ選んでください：カフェ, ラーメン, 寿司, 焼肉, イタリアン, フレンチ, 中華, 和食, カレー, パン屋, スイーツ, 居酒屋, バー, ファストフード, その他
+
+料理や食べ物の写真でない場合は、genre を "その他" にしてください。
 ''';
 
     try {
@@ -122,10 +132,15 @@ $placesDescription
 
 /// 写真分析の結果
 class PlacePhotoAnalysis {
-  const PlacePhotoAnalysis({required this.tags, required this.note});
+  const PlacePhotoAnalysis({
+    required this.tags,
+    required this.note,
+    this.genre,
+  });
 
   final List<String> tags;
   final String note;
+  final String? genre;
 
   factory PlacePhotoAnalysis.empty() {
     return const PlacePhotoAnalysis(tags: [], note: '');
@@ -145,8 +160,9 @@ class PlacePhotoAnalysis {
               .toList() ??
           [];
       final note = parsed['note'] as String? ?? '';
+      final genre = parsed['genre'] as String?;
 
-      return PlacePhotoAnalysis(tags: tags, note: note);
+      return PlacePhotoAnalysis(tags: tags, note: note, genre: genre);
     } catch (_) {
       return PlacePhotoAnalysis(tags: [], note: text.trim());
     }

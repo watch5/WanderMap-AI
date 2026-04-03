@@ -31,7 +31,9 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
   late final TextEditingController _titleController;
   late final TextEditingController _notesController;
   late bool _visited;
-  late int _rating;
+  late double _rating;
+  late String? _selectedGenre;
+  late PriceRange? _selectedPriceRange;
   late List<String> _aiTags;
   File? _selectedImage;
   bool _saving = false;
@@ -46,7 +48,9 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
     _titleController = TextEditingController(text: existing?.title ?? '');
     _notesController = TextEditingController(text: existing?.notes ?? '');
     _visited = existing?.visited ?? false;
-    _rating = existing?.rating ?? 0;
+    _rating = existing?.rating ?? 0.0;
+    _selectedGenre = existing?.genre;
+    _selectedPriceRange = existing?.priceRange;
     _aiTags = List<String>.from(existing?.aiTags ?? []);
     if (existing?.imagePath != null) {
       final f = File(existing!.imagePath!);
@@ -103,7 +107,7 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
 
                   // タイトル
                   Text(
-                    _isEditing ? 'スポットを編集' : '新しいスポット',
+                    _isEditing ? 'グルメスポットを編集' : '新しいグルメスポット',
                     style: theme.textTheme.headlineSmall
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),
@@ -131,9 +135,9 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
                   TextField(
                     controller: _titleController,
                     decoration: const InputDecoration(
-                      labelText: 'スポット名',
-                      hintText: '例: お気に入りのカフェ',
-                      prefixIcon: Icon(Icons.place),
+                      labelText: 'お店の名前',
+                      hintText: '例: 麺屋 一燈',
+                      prefixIcon: Icon(Icons.restaurant),
                     ),
                     textInputAction: TextInputAction.next,
                   ),
@@ -143,13 +147,21 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
                   TextField(
                     controller: _notesController,
                     decoration: const InputDecoration(
-                      labelText: 'メモ',
-                      hintText: '例: 静かで落ち着いた雰囲気',
-                      prefixIcon: Icon(Icons.note),
+                      labelText: 'メモ・感想',
+                      hintText: '例: 濃厚つけ麺が絶品！',
+                      prefixIcon: Icon(Icons.edit_note),
                     ),
                     maxLines: 3,
                     textInputAction: TextInputAction.done,
                   ),
+                  const SizedBox(height: 20),
+
+                  // ジャンル選択
+                  _buildGenreSelector(theme),
+                  const SizedBox(height: 16),
+
+                  // 価格帯
+                  _buildPriceRangeSelector(theme),
                   const SizedBox(height: 20),
 
                   // 訪問済み / 行きたいトグル
@@ -250,13 +262,13 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(
-          Icons.add_a_photo_outlined,
+          Icons.restaurant_menu,
           size: 40,
           color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
         ),
         const SizedBox(height: 8),
         Text(
-          '写真を追加',
+          '料理の写真を追加',
           style: theme.textTheme.bodyMedium?.copyWith(
             color:
                 theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
@@ -264,7 +276,7 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
         ),
         const SizedBox(height: 4),
         Text(
-          'AIが自動でタグとメモを提案します',
+          'AIが料理のジャンルやタグを自動判定します',
           style: theme.textTheme.bodySmall?.copyWith(
             color:
                 theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
@@ -442,6 +454,9 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
         if (analysis.note.isNotEmpty && _notesController.text.isEmpty) {
           _notesController.text = analysis.note;
         }
+        if (analysis.genre != null && _selectedGenre == null) {
+          _selectedGenre = analysis.genre;
+        }
       });
     } catch (e) {
       if (mounted) {
@@ -469,18 +484,18 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
           Expanded(
             child: _ToggleOption(
               label: '行きたい',
-              icon: Icons.favorite,
+              icon: Icons.bookmark_outline,
               selected: !_visited,
-              color: const Color(0xFFC62828),
+              color: const Color(0xFFE65100),
               onTap: () => setState(() => _visited = false),
             ),
           ),
           Expanded(
             child: _ToggleOption(
               label: '訪問済み',
-              icon: Icons.check_circle,
+              icon: Icons.restaurant,
               selected: _visited,
-              color: const Color(0xFF2E7D32),
+              color: const Color(0xFFBF360C),
               onTap: () => setState(() => _visited = true),
             ),
           ),
@@ -493,23 +508,123 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('評価', style: theme.textTheme.titleSmall),
+        Row(
+          children: [
+            Text('評価', style: theme.textTheme.titleSmall),
+            const SizedBox(width: 8),
+            Text(
+              _rating > 0 ? _rating.toStringAsFixed(1) : '未評価',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(5, (index) {
-            final starIndex = index + 1;
-            return IconButton(
-              onPressed: () => setState(() => _rating = starIndex),
-              icon: Icon(
-                starIndex <= _rating ? Icons.star : Icons.star_border,
-                color: starIndex <= _rating
-                    ? Colors.amber
-                    : theme.colorScheme.onSurfaceVariant,
-                size: 32,
+            final starValue = index + 1.0;
+            final isHalf = _rating >= starValue - 0.5 && _rating < starValue;
+            final isFull = _rating >= starValue;
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  // タップで full → half → 0 のサイクル
+                  if (_rating == starValue) {
+                    _rating = starValue - 0.5;
+                  } else if (_rating == starValue - 0.5) {
+                    _rating = (starValue - 1.0).clamp(0.0, 5.0);
+                  } else {
+                    _rating = starValue;
+                  }
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Icon(
+                  isFull
+                      ? Icons.star
+                      : isHalf
+                          ? Icons.star_half
+                          : Icons.star_border,
+                  color: isFull || isHalf
+                      ? Colors.amber.shade700
+                      : theme.colorScheme.onSurfaceVariant,
+                  size: 36,
+                ),
               ),
             );
           }),
+        ),
+      ],
+    );
+  }
+
+  // ── ジャンル選択 ────────────────────────
+
+  Widget _buildGenreSelector(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('ジャンル', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: FoodGenre.presets.map((genre) {
+            final isSelected = _selectedGenre == genre;
+            return FilterChip(
+              label: Text(genre),
+              selected: isSelected,
+              onSelected: (selected) {
+                setState(() {
+                  _selectedGenre = selected ? genre : null;
+                });
+              },
+              selectedColor:
+                  theme.colorScheme.primaryContainer.withValues(alpha: 0.7),
+              checkmarkColor: theme.colorScheme.onPrimaryContainer,
+              visualDensity: VisualDensity.compact,
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  // ── 価格帯選択 ────────────────────────
+
+  Widget _buildPriceRangeSelector(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('価格帯', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 8),
+        SegmentedButton<PriceRange?>(
+          segments: [
+            const ButtonSegment<PriceRange?>(
+              value: null,
+              label: Text('未設定'),
+            ),
+            ...PriceRange.values.map((pr) {
+              return ButtonSegment<PriceRange?>(
+                value: pr,
+                label: Text(pr.symbol),
+                tooltip: pr.label,
+              );
+            }),
+          ],
+          selected: {_selectedPriceRange},
+          onSelectionChanged: (selected) {
+            setState(() => _selectedPriceRange = selected.first);
+          },
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            textStyle: WidgetStatePropertyAll(
+              theme.textTheme.bodySmall,
+            ),
+          ),
         ),
       ],
     );
@@ -521,7 +636,7 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('スポット名を入力してください')),
+        const SnackBar(content: Text('お店の名前を入力してください')),
       );
       return;
     }
@@ -536,7 +651,11 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
           title: title,
           notes: _notesController.text.trim(),
           visited: _visited,
-          rating: _visited ? _rating : 0,
+          rating: _visited ? _rating : 0.0,
+          genre: _selectedGenre,
+          clearGenre: _selectedGenre == null,
+          priceRange: _selectedPriceRange,
+          clearPriceRange: _selectedPriceRange == null,
           imagePath: _selectedImage?.path,
           aiTags: _aiTags,
         );
@@ -548,7 +667,9 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
           longitude: widget.longitude,
           notes: _notesController.text.trim(),
           visited: _visited,
-          rating: _visited ? _rating : 0,
+          rating: _visited ? _rating : 0.0,
+          genre: _selectedGenre,
+          priceRange: _selectedPriceRange,
           imagePath: _selectedImage?.path,
           aiTags: _aiTags,
         );
@@ -572,7 +693,7 @@ class _PlaceBottomSheetState extends ConsumerState<PlaceBottomSheet> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('スポットを削除'),
-        content: const Text('このスポットを削除しますか？この操作は元に戻せません。'),
+        content: const Text('このグルメスポットを削除しますか？この操作は元に戻せません。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
