@@ -1,6 +1,10 @@
 # Environment variables
 .env
 
+# API Keys (native side)
+ios/Flutter/Keys.xcconfig
+android/local.properties
+
 # Miscellaneous
 *.class
 *.log
